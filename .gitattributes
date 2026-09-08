@@ -1,0 +1,5 @@
+# Windows + core.autocrlf=true transforma os .sh em CRLF no checkout, e o `sh`
+# do container morre com "set: Illegal option -" — o serviço `cron` do
+# docker-stack.yml entraria em restart loop. Só acontece em build local a partir
+# do Windows (o CI do GitHub roda em Linux e nunca viu isto).
+*.sh text eol=lf

@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# openreply — stack de PRODUÇÃO para Docker Swarm + Traefik v2.
+#
+# Deploy (no manager do Swarm, já logado no ghcr — ver DEPLOY.md):
+#   set -a; . ./.env.prod; set +a          # stack deploy NÃO lê env_file
+#   docker stack deploy --with-registry-auth -c docker-stack.yml openreply
+#
+# QUATRO processos, todos da MESMA imagem (menos o redis):
+#   web    → next start, recebe o webhook do Meta e serve o painel  (público)
+#   worker → tira job da fila e manda a DM. Sem ele, comentário entra e NADA sai
+#   cron   → scripts/cron.sh; substitui o "crons" do vercel.json, que ninguém lê
+#            fora da Vercel. Sem ele o token do Instagram expira EM SILÊNCIO e
+#            todas as automações param sem erro nenhum.
+#   redis  → fila BullMQ (só na rede interna, sem rota pública)
+#
+# BANCO: o Postgres que já roda na stack (serviço `postgres15`, rede `zapinpro`),
+# num banco dedicado `openreply`. Este stack NÃO sobe Postgres próprio.
+# As migrações rodam no START do `web` (não no build da imagem: no build não há
+# rede para alcançar o banco — é o erro P1001 clássico).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Env compartilhado. DATABASE_URL, REDIS_URL e ENCRYPTION_KEY precisam ser
+# IDÊNTICOS entre web e worker, senão o worker não decifra o token e todo envio
+# falha.
+x-app-env: &app-env
+  NODE_ENV: production
+  NEXTAUTH_URL: https://${OPENREPLY_HOST:?defina OPENREPLY_HOST}
+  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?defina NEXTAUTH_SECRET}
+  CRON_SECRET: ${CRON_SECRET:?defina CRON_SECRET}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY (64 hex)}
+
+  DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL apontando para o postgres15}
+  REDIS_URL: redis://redis:6379
+
+  EMAIL_SERVER: ${EMAIL_SERVER}
+  RESEND_API_KEY: ${RESEND_API_KEY}
+  EMAIL_FROM: ${EMAIL_FROM:-OpenReply <login@zapin.pro>}
+  # Sem isto o cadastro fica aberto para qualquer visitante do domínio.
+  ALLOWED_EMAILS: ${ALLOWED_EMAILS}
+
+  META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
+  INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID:?defina INSTAGRAM_APP_ID}
+  INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:?defina INSTAGRAM_APP_SECRET}
+  FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET}
+  WEBHOOK_VERIFY_TOKEN: ${WEBHOOK_VERIFY_TOKEN:?defina WEBHOOK_VERIFY_TOKEN}
+
+services:
+  web:
+    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v1}
+    # `prisma migrate deploy` roda aqui, no start, com o container já na rede.
+    # replicas fica em 1 de propósito: duas réplicas migrariam ao mesmo tempo.
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+    environment: *app-env
+    networks: [zapinpro, internal] # zapinpro: Traefik + postgres15
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any }
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=zapinpro
+        - "traefik.http.routers.openreply.rule=Host(`${OPENREPLY_HOST}`)"
+        - traefik.http.routers.openreply.entrypoints=websecure
+        - traefik.http.routers.openreply.tls=true
+        - traefik.http.routers.openreply.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.openreply.service=openreply
+        - traefik.http.services.openreply.loadbalancer.server.port=3000
+
+  # Quem realmente manda a DM. Não tem porta nem rota pública.
+  worker:
+    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v1}
+    command: ["npm", "run", "worker"]
+    environment: *app-env
+    networks: [zapinpro, internal] # zapinpro: precisa alcançar o postgres15
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any }
+
+  # Agendador dos /api/cron. Chama o `web` pelo nome do serviço na rede interna.
+  # Não precisa da rede zapinpro: não fala com banco, só com o web por HTTP.
+  cron:
+    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v1}
+    command: ["sh", "scripts/cron.sh"]
+    environment:
+      CRON_BASE_URL: http://web:3000
+      CRON_SECRET: ${CRON_SECRET:?defina CRON_SECRET}
+    networks: [internal]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any }
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    deploy:
+      replicas: 1
+      restart_policy: { condition: any }
+
+networks:
+  # Rede do Traefik, já existente (external = este stack não a cria). É também
+  # onde vive o `postgres15`, por isso web e worker o alcançam pelo hostname.
+  zapinpro:
+    external: true
+  # Rede do stack: web ↔ worker ↔ cron ↔ redis, sem exposição nenhuma.
+  internal:
+    driver: overlay
+
+volumes:
+  redis_data:

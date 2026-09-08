@@ -43,3 +43,6 @@ next-env.d.ts
 
 /app/generated/prisma
 .gstack/
+
+# Deploy do ecossistema zapin: o exemplo tem que ir para o git (o `.env*` acima o pegava).
+!.env.deploy.example
