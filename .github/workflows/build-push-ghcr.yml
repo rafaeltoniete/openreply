@@ -6,12 +6,13 @@
 #   git tag v1 && git push origin v1
 # Ou Actions → build-push-ghcr → Run workflow (informando a versão).
 #
-# ⚠️ ARQUITETURA: builda **linux/arm64**, porque a VPS do ecossistema é arm64.
-# Confirme com `uname -m` na VPS antes da primeira tag:
-#   aarch64 → é isto aqui, não mexa.
-#   x86_64  → troque as DUAS linhas marcadas com [ARCH] abaixo para
-#             `runs-on: ubuntu-latest` e `platforms: linux/amd64`.
-# Não builde arm64 por QEMU num runner amd64: `next build` sob emulação trava.
+# ⚠️ ARQUITETURA: builda **linux/amd64**, para o servidor novo (x86_64). Confirme
+# com `uname -m` nele antes da primeira tag:
+#   x86_64  → é isto aqui, não mexa.
+#   aarch64 → troque as DUAS linhas marcadas com [ARCH] abaixo para
+#             `runs-on: ubuntu-24.04-arm` e `platforms: linux/arm64`.
+# Nunca cruze os dois: `next build` sob emulação QEMU trava. Cada arquitetura é
+# buildada em runner NATIVO daquela arquitetura.
 name: build-push-ghcr
 
 on:
@@ -30,7 +31,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm # [ARCH] runner arm64 nativo
+    runs-on: ubuntu-latest # [ARCH] runner amd64 nativo
     permissions:
       contents: read
       packages: write
@@ -60,7 +61,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          platforms: linux/arm64 # [ARCH]
+          platforms: linux/amd64 # [ARCH]
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE }}:${{ steps.ver.outputs.version }}

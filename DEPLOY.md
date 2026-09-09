@@ -18,13 +18,17 @@ Mesmo padrão do resto do ecossistema (Swarm + Traefik `letsencryptresolver` + r
 
 ## 0. Pré-requisitos
 
-- **Arquitetura da VPS.** Antes de tudo:
+- **Arquitetura do servidor.** O workflow builda **`linux/amd64`**, para o servidor novo.
+  Confirme:
   ```bash
   uname -m
   ```
-  `aarch64` → o workflow já está certo. `x86_64` → troque as duas linhas marcadas
-  `[ARCH]` em `.github/workflows/build-push-ghcr.yml` (`runs-on: ubuntu-latest` e
-  `platforms: linux/amd64`). Não builde arm64 por QEMU: `next build` sob emulação trava.
+  `x86_64` → está certo. `aarch64` → troque as duas linhas marcadas `[ARCH]` em
+  `.github/workflows/build-push-ghcr.yml` (`runs-on: ubuntu-24.04-arm` e
+  `platforms: linux/arm64`). Nunca cruze os dois: `next build` sob emulação QEMU trava.
+
+  > ⚠️ A imagem do **dm-zapin** é arm64 (a VPS antiga). Ela **não roda** neste servidor.
+  > Se a ideia era manter os dois no ar em paralelo, isso não sai de graça — ver §5.
 
 - **DNS.** Um registro A `openreply.zapin.pro` → IP da VPS, **DNS only** (nuvem cinza no
   Cloudflare). O proxy da Cloudflare atrapalha o webhook do Meta, e o Let's Encrypt só
