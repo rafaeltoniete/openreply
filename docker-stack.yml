@@ -46,7 +46,7 @@ x-app-env: &app-env
 
 services:
   web:
-    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v1}
+    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v2}
     # `prisma migrate deploy` roda aqui, no start, com o container já na rede.
     # replicas fica em 1 de propósito: duas réplicas migrariam ao mesmo tempo.
     command: ["sh", "-c", "npx prisma migrate deploy && npm run start"]
@@ -67,7 +67,7 @@ services:
 
   # Quem realmente manda a DM. Não tem porta nem rota pública.
   worker:
-    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v1}
+    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v2}
     command: ["npm", "run", "worker"]
     environment: *app-env
     networks: [zapinpro, internal] # zapinpro: precisa alcançar o postgres15
@@ -78,7 +78,7 @@ services:
   # Agendador dos /api/cron. Chama o `web` pelo nome do serviço na rede interna.
   # Não precisa da rede zapinpro: não fala com banco, só com o web por HTTP.
   cron:
-    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v1}
+    image: ghcr.io/rafaeltoniete/openreply:${OPENREPLY_VERSION:-v2}
     command: ["sh", "scripts/cron.sh"]
     environment:
       CRON_BASE_URL: http://web:3000
