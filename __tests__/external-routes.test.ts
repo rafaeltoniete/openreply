@@ -24,6 +24,8 @@ const auth = { authorization: `Bearer ${TOKEN}` };
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  // unstubAllEnvs nao limpa o que ja vinha exportado no shell (ex.: apos `source .env.prod`).
+  vi.stubEnv("EXTERNAL_API_WORKSPACE_ID", "");
   vi.stubEnv("EXTERNAL_API_TOKEN", TOKEN);
   mockPrisma.workspace.findMany.mockResolvedValue([{ id: "ws_1" }]);
 });
@@ -121,7 +123,7 @@ describe("POST /api/external/campaigns", () => {
     mockPrisma.workspace.findUnique.mockResolvedValue({ id: "ws_1" });
     mockPrisma.instagramAccount.findFirst.mockResolvedValue({ id: "acc_1" });
     mockPrisma.automation.findMany.mockResolvedValue([]);
-    mockPrisma.automation.create.mockImplementation(async ({ data }) => ({ id: "auto_1", ...data }));
+    mockPrisma.automation.create.mockImplementation(async ({ data }) => ({ id: "auto_1", isActive: true, ...data }));
   });
 
   it("cria e responde 201 com created:true e o link do painel", async () => {
@@ -130,7 +132,7 @@ describe("POST /api/external/campaigns", () => {
     expect(await res.json()).toEqual({
       success: true,
       created: true,
-      data: { id: "auto_1", name: BODY.name, postId: BODY.postId, keywords: ["CLAUDE"], dashboardUrl: "https://openreply.zapin.pro/campaigns/auto_1" },
+      data: { id: "auto_1", name: BODY.name, postId: BODY.postId, keywords: ["CLAUDE"], isActive: true, dashboardUrl: "https://openreply.zapin.pro/campaigns/auto_1" },
     });
     expect(mockPrisma.automation.create.mock.calls[0][0].data).toMatchObject({
       workspaceId: "ws_1", instagramAccountId: "acc_1", requireFollow: true, keywords: ["CLAUDE"],
@@ -138,19 +140,67 @@ describe("POST /api/external/campaigns", () => {
   });
 
   it("e idempotente: mesma conta, post e palavras (outra caixa) devolve a existente com 200 e nao cria", async () => {
-    mockPrisma.automation.findMany.mockResolvedValueOnce([{ id: "auto_0", name: "Antiga", postId: BODY.postId, keywords: ["claude"] }]);
+    mockPrisma.automation.findMany.mockResolvedValueOnce([{ id: "auto_0", name: "Antiga", postId: BODY.postId, keywords: ["claude"], isActive: true }]);
     const res = await postCampaign(postReq(BODY));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       success: true,
       created: false,
-      data: { id: "auto_0", name: "Antiga", postId: BODY.postId, keywords: ["claude"], dashboardUrl: "https://openreply.zapin.pro/campaigns/auto_0" },
+      data: { id: "auto_0", name: "Antiga", postId: BODY.postId, keywords: ["claude"], isActive: true, dashboardUrl: "https://openreply.zapin.pro/campaigns/auto_0" },
     });
     expect(mockPrisma.automation.create).not.toHaveBeenCalled();
     expect(mockPrisma.automation.findMany).toHaveBeenCalledWith({
       where: { workspaceId: "ws_1", instagramAccountId: "acc_1", postId: BODY.postId },
-      select: { id: true, name: true, postId: true, keywords: true },
+      select: { id: true, name: true, postId: true, keywords: true, isActive: true },
     });
+  });
+
+  it("a duplicada pausada e devolvida com isActive:false (sem filtrar por ativa)", async () => {
+    mockPrisma.automation.findMany.mockResolvedValueOnce([{ id: "auto_0", name: "Pausada", postId: BODY.postId, keywords: ["CLAUDE"], isActive: false }]);
+    const res = await postCampaign(postReq(BODY));
+    expect(res.status).toBe(200);
+    const corpo = await res.json();
+    expect(corpo.created).toBe(false);
+    expect(corpo.data.isActive).toBe(false);
+    expect(mockPrisma.automation.create).not.toHaveBeenCalled();
+  });
+
+  it("duas chamadas simultaneas iguais criam uma campanha so (trava por post)", async () => {
+    const rows: Array<{ id: string; name: string; postId: string | null; keywords: string[]; isActive: boolean }> = [];
+    mockPrisma.automation.findMany.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return [...rows];
+    });
+    mockPrisma.automation.create.mockImplementation(async ({ data }) => {
+      // a escrita tambem leva tempo: sem isso a 1a criacao termina antes da 2a leitura e o teste nao pega a corrida
+      await new Promise((r) => setTimeout(r, 5));
+      const row = { id: `auto_${rows.length + 1}`, isActive: true, ...data };
+      rows.push(row);
+      return row;
+    });
+    const [a, b] = await Promise.all([postCampaign(postReq(BODY)), postCampaign(postReq(BODY))]);
+    expect(mockPrisma.automation.create).toHaveBeenCalledTimes(1);
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    const corpos = await Promise.all([a.json(), b.json()]);
+    expect(corpos.map((c) => c.created).sort()).toEqual([false, true]);
+  });
+
+  it("escopo do tenant: a conta pedida passa por getWorkspaceInstagramAccount e a devolvida substitui a do corpo", async () => {
+    mockAccounts.getWorkspaceInstagramAccount.mockImplementation(async (ws: string, id: string) =>
+      ws === "ws_1" && id === "acc_other" ? { id: "acc_1" } : null
+    );
+    const res = await postCampaign(postReq({ ...BODY, instagramAccountId: "acc_other" }));
+    expect(res.status).toBe(201);
+    expect(mockAccounts.getWorkspaceInstagramAccount).toHaveBeenCalledWith("ws_1", "acc_other");
+    expect(mockPrisma.automation.create.mock.calls[0][0].data.instagramAccountId).toBe("acc_1");
+  });
+
+  it("400 e nada criado quando a conta pedida nao pertence ao workspace", async () => {
+    mockAccounts.getWorkspaceInstagramAccount.mockResolvedValue(null);
+    const res = await postCampaign(postReq({ ...BODY, instagramAccountId: "acc_alheia" }));
+    expect(res.status).toBe(400);
+    expect(mockAccounts.getWorkspaceInstagramAccount).toHaveBeenCalledWith("ws_1", "acc_alheia");
+    expect(mockPrisma.automation.create).not.toHaveBeenCalled();
   });
 
   it("palavras diferentes no mesmo post criam outra campanha", async () => {

@@ -71,7 +71,8 @@ export async function guardExternalRequest(request: NextRequest): Promise<Extern
 export function toExternalPost(media: InstagramMedia) {
   return {
     id: media.id,
-    caption: (media.caption ?? "").replace(/\s+/g, " ").trim().slice(0, 80),
+    // Por pontos de codigo (nao unidades UTF-16): cortar no meio de um emoji deixaria um surrogate solto.
+    caption: Array.from((media.caption ?? "").replace(/\s+/g, " ").trim()).slice(0, 80).join(""),
     mediaType: media.media_type,
     productType: media.media_product_type ?? null,
     permalink: media.permalink ?? null,
@@ -84,12 +85,14 @@ export function toExternalCampaign(automation: {
   name: string;
   postId: string | null;
   keywords: string[];
+  isActive: boolean;
 }) {
   return {
     id: automation.id,
     name: automation.name,
     postId: automation.postId,
     keywords: automation.keywords,
+    isActive: automation.isActive,
     dashboardUrl: `${getBaseUrl()}/campaigns/${automation.id}`,
   };
 }

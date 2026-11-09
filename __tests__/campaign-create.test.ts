@@ -83,7 +83,7 @@ describe("findExistingCampaign", () => {
     expect(await findExistingCampaign(params)).toEqual({ id: "b", name: "B", postId: "p1", keywords: ["CLAUDE"] });
     expect(mockPrisma.automation.findMany).toHaveBeenCalledWith({
       where: { workspaceId: "ws_1", instagramAccountId: "acc_1", postId: "p1" },
-      select: { id: true, name: true, postId: true, keywords: true },
+      select: { id: true, name: true, postId: true, keywords: true, isActive: true },
     });
 
     mockPrisma.automation.findMany.mockResolvedValueOnce([{ id: "c", name: "C", postId: "p1", keywords: ["B", "A"] }]);

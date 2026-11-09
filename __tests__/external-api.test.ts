@@ -26,6 +26,9 @@ const req = (authorization?: string) =>
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  // unstubAllEnvs nao limpa o que ja vinha exportado no shell (ex.: apos `source .env.prod`).
+  vi.stubEnv("EXTERNAL_API_TOKEN", "");
+  vi.stubEnv("EXTERNAL_API_WORKSPACE_ID", "");
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -106,6 +109,7 @@ describe("guardExternalRequest", () => {
   it("nunca devolve o token na resposta", async () => {
     vi.stubEnv("EXTERNAL_API_TOKEN", TOKEN);
     const r = await guardExternalRequest(req("Bearer errado"));
+    expect(r.ok).toBe(false);
     if (!r.ok) expect(JSON.stringify(await r.response.json())).not.toContain(TOKEN);
   });
 });
@@ -120,10 +124,20 @@ describe("mapeamentos", () => {
     expect(toExternalPost({ id: "2", media_type: "IMAGE", timestamp: "t" })).toEqual({ id: "2", caption: "", mediaType: "IMAGE", productType: null, permalink: null, timestamp: "t" });
   });
 
-  it("toExternalCampaign monta o link do painel com NEXTAUTH_URL", () => {
+  it("toExternalPost nao parte emoji ao cortar a legenda em 80 pontos de codigo", () => {
+    const caption = `${"a".repeat(79)}🔥 e mais texto depois`;
+    const p = toExternalPost({ id: "1", caption, media_type: "IMAGE", timestamp: "t" });
+    const pontos = Array.from(p.caption);
+    expect(pontos).toHaveLength(80);
+    expect(pontos[79]).toBe("🔥");
+    expect(p.caption.isWellFormed()).toBe(true);
+  });
+
+  it("toExternalCampaign monta o link do painel com NEXTAUTH_URL e informa isActive", () => {
     vi.stubEnv("NEXTAUTH_URL", "https://openreply.zapin.pro");
-    expect(toExternalCampaign({ id: "auto_1", name: "N", postId: "p", keywords: ["A"], extra: 1 } as never)).toEqual({
-      id: "auto_1", name: "N", postId: "p", keywords: ["A"], dashboardUrl: "https://openreply.zapin.pro/campaigns/auto_1",
+    expect(toExternalCampaign({ id: "auto_1", name: "N", postId: "p", keywords: ["A"], isActive: true, extra: 1 } as never)).toEqual({
+      id: "auto_1", name: "N", postId: "p", keywords: ["A"], isActive: true, dashboardUrl: "https://openreply.zapin.pro/campaigns/auto_1",
     });
+    expect(toExternalCampaign({ id: "auto_2", name: "N", postId: "p", keywords: ["A"], isActive: false })).toMatchObject({ isActive: false });
   });
 });

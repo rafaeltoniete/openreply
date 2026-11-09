@@ -222,7 +222,7 @@ export async function findExistingCampaign(params: {
       instagramAccountId: params.instagramAccountId,
       postId: params.postId,
     },
-    select: { id: true, name: true, postId: true, keywords: true },
+    select: { id: true, name: true, postId: true, keywords: true, isActive: true },
   });
   return candidates.find((c) => normalizeKeywords(c.keywords) === wanted) ?? null;
 }
