@@ -81,11 +81,15 @@ describe("GET /api/external/posts", () => {
     expect(semConta.status).toBe(400);
     expect((await semConta.json()).error).toBe("Conecte o Instagram antes de listar posts");
 
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockInstagram.getUserMedia.mockRejectedValueOnce(new Error("token=SEGREDO expirou"));
     const falha = await getPosts(getReq());
     expect(falha.status).toBe(502);
     const corpo = JSON.stringify(await falha.json());
     expect(corpo).toContain("Falha ao buscar posts no Instagram");
     expect(corpo).not.toContain("SEGREDO");
+    expect(spy).toHaveBeenCalled();
+    expect(JSON.stringify(spy.mock.calls)).not.toContain("SEGREDO");
+    spy.mockRestore();
   });
 });

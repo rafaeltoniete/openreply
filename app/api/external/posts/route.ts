@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const media = await getUserMedia({ context, limit });
     return NextResponse.json({ success: true, data: media.map(toExternalPost) });
   } catch (err) {
-    console.error("[External API] Falha ao buscar posts:", err instanceof Error ? err.message : "erro desconhecido");
+    console.error("[External API] Falha ao buscar posts no Instagram", err instanceof Error ? err.name : "erro desconhecido");
     return NextResponse.json(
       { success: false, error: "Falha ao buscar posts no Instagram" },
       { status: 502 }
