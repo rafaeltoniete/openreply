@@ -100,6 +100,22 @@ Dois campos que costumam morder:
 - **`ALLOWED_EMAILS`** — sem isto, **qualquer pessoa** que abrir `openreply.zapin.pro` pede um
   magic link, entra e ganha um workspace próprio. Preencha com o seu e-mail.
 
+### Atualizar para a v3 (API externa para o bot do Telegram)
+
+A v3 acrescenta `GET /api/external/posts` e `POST /api/external/campaigns`, protegidos por token. Nada muda no painel.
+
+1. No `.env.prod` da VPS, gere e preencha o token (e o workspace, só se houver mais de um):
+   ```bash
+   openssl rand -hex 32   # EXTERNAL_API_TOKEN
+   ```
+2. Tag e imagem (CI): `git tag v3 && git push origin main v3`.
+3. Na VPS: `OPENREPLY_VERSION=v3` no `.env.prod` e `docker stack deploy --with-registry-auth -c docker-stack.yml openreply`.
+4. Teste de fumaça (troque o token):
+   ```bash
+   curl -s -H "Authorization: Bearer $EXTERNAL_API_TOKEN" "https://openreply.zapin.pro/api/external/posts?limit=2"
+   ```
+   Deve listar seus últimos posts. Sem o cabeçalho: `401`. Sem a variável no stack: `503 API externa desligada`.
+
 ---
 
 ## 4. Subir

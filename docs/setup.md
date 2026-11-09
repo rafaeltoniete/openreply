@@ -100,6 +100,8 @@ Copy `.env.example` to `.env` for local work, or set these in Vercel and Railway
 | `NEXTAUTH_URL` | Your public URL. Your Vercel domain in production, your tunnel URL locally. |
 | `NEXTAUTH_SECRET` | Random secret. `openssl rand -base64 32` |
 | `CRON_SECRET` | Random secret protecting the token-refresh cron. |
+| `EXTERNAL_API_TOKEN` | Optional. Enables `/api/external/*` for bots and automations (`Authorization: Bearer <token>`, at least 32 characters). Unset = API off (503). |
+| `EXTERNAL_API_WORKSPACE_ID` | Optional. Workspace the external API acts on. Without it, the only workspace is used; with more than one, it is required. |
 | `ENCRYPTION_KEY` | 32-byte hex. `openssl rand -hex 32`. Encrypts provider credentials and Instagram tokens. Identical across web and worker. |
 | `DATABASE_URL` | PostgreSQL connection string. Public Railway URL on Vercel; internal on the worker. |
 | `REDIS_URL` | Redis connection string. Must support blocking commands, so an HTTP-only Redis will not work with BullMQ. |

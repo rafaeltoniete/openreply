@@ -50,7 +50,11 @@ services:
     # `prisma migrate deploy` roda aqui, no start, com o container já na rede.
     # replicas fica em 1 de propósito: duas réplicas migrariam ao mesmo tempo.
     command: ["sh", "-c", "npx prisma migrate deploy && npm run start"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # API externa (bot do Telegram). Opcionais: sem o token a API fica desligada (503).
+      EXTERNAL_API_TOKEN: ${EXTERNAL_API_TOKEN:-}
+      EXTERNAL_API_WORKSPACE_ID: ${EXTERNAL_API_WORKSPACE_ID:-}
     networks: [zapinpro, internal] # zapinpro: Traefik + postgres15
     deploy:
       replicas: 1
